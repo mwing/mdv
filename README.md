@@ -30,7 +30,19 @@ Or, with Go 1.24 or newer:
 go install github.com/mwing/mdv@latest
 ```
 
-Each release lists SHA-256 sums in `checksums.txt`.
+To check the download against the release's `checksums.txt` first, using `os` and `arch`
+from above (on Linux without `shasum`, use `sha256sum -c -`):
+
+```sh
+(
+  cd "$(mktemp -d)" &&
+  base=https://github.com/mwing/mdv/releases/latest/download &&
+  curl -fsSLO "$base/mdv_${os}_${arch}.tar.gz" -O "$base/checksums.txt" &&
+  grep "mdv_${os}_${arch}.tar.gz" checksums.txt | shasum -a 256 -c - &&
+  mkdir -p ~/.local/bin &&
+  tar -xzf "mdv_${os}_${arch}.tar.gz" -C ~/.local/bin mdv
+)
+```
 
 ## Options
 
@@ -59,6 +71,7 @@ With no file, or `-`, `mdv` reads stdin.
 - Code blocks are never hard-wrapped, so a copied line stays one line.
 - Control bytes in the input are dropped, so a file cannot send escape sequences to the
   terminal.
+- Input larger than 64 MiB is refused.
 
 ## Images
 
@@ -67,6 +80,11 @@ graphics protocol, scaled down to fit the text width and one screen of height. T
 placed with Unicode placeholders, so they scroll with the text inside `less`.
 
 - Paths resolve relative to the markdown file. Remote URLs are never fetched.
+- Image paths are not confined to the document's directory, so `../assets/logo.png`
+  works, and so does an absolute path. A document you do not trust can therefore put any
+  image file you can read on your screen; use `-images never` for those.
+- One document can send at most 64 MiB of image data; an image that would exceed that
+  falls back to alt text.
 - Anything that cannot be shown falls back to `[image: alt]`: remote and missing files,
   SVG and WebP, images in headings and table cells, tmux, zellij, and piped output.
 - Before sending the first image, `mdv` asks the terminal for its name, because `TERM`
@@ -82,7 +100,8 @@ autolink, bare URL), images, fenced and indented code, block quotes, GitHub aler
 lists, task lists, tables with alignment and cell wrapping, rules, front matter, HTML
 entities, and common inline HTML tags (dropped, keeping their text).
 
-Not supported: syntax highlighting and footnotes. The parser is pragmatic rather than a
+Not supported: syntax highlighting, footnotes, and links inside link text. Quotes and
+lists nested more than 32 deep are shown as plain text. The parser is pragmatic rather than a
 full CommonMark implementation, so unusual emphasis nesting can render slightly off.
 
 ## Code layout

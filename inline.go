@@ -108,24 +108,55 @@ func findCloser(s string, from int, c byte, use int, exact bool) int {
 	return -1
 }
 
-func closeBracket(s string, i int) int {
-	depth := 0
+// The cache keeps nested openers linear; a fresh scan per opener is
+// quadratic. -1 marks an opener with no closer. An entry depends only on the
+// text after its opener, so it stays valid however the caller got there.
+func match(s string, i int, open, close byte, code bool, cache map[int]int) int {
+	if j, ok := cache[i]; ok {
+		return j
+	}
+	var stack []int
+scan:
 	for k := i; k < len(s); k++ {
-		switch s[k] {
-		case '\\':
+		switch c := s[k]; {
+		case c == '\\':
 			k++
-		case '`':
+		case c == '`' && code:
 			k = skipCode(s, k)
-		case '[':
-			depth++
-		case ']':
-			depth--
-			if depth == 0 {
+		case c == open:
+			if j, ok := cache[k]; ok {
+				// An inner opener that never closes leaves no closer for
+				// the ones around it.
+				if j < 0 {
+					break scan
+				}
+				k = j
+				continue
+			}
+			stack = append(stack, k)
+		case c == close:
+			n := len(stack)
+			cache[stack[n-1]] = k
+			stack = stack[:n-1]
+			if n == 1 {
 				return k
 			}
 		}
 	}
+	for _, p := range stack {
+		cache[p] = -1
+	}
 	return -1
+}
+
+const maxLinkLabel = 999
+
+func (r *renderer) ref(label string) (string, bool) {
+	if len(r.refs) == 0 || len(label) > maxLinkLabel {
+		return "", false
+	}
+	dest, ok := r.refs[normLabel(label)]
+	return dest, ok
 }
 
 func linkDest(s string) string {
@@ -145,27 +176,18 @@ func normLabel(s string) string {
 	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
 }
 
-func (r *renderer) link(s string, i int) (text, dest string, end int, ok bool) {
-	j := closeBracket(s, i)
+type pairCache struct{ brackets, parens map[int]int }
+
+func (r *renderer) link(s string, i int, pc *pairCache) (text, dest string, end int, ok bool) {
+	j := match(s, i, '[', ']', true, pc.brackets)
 	if j < 0 {
 		return
 	}
 	text = s[i+1 : j]
 	rest := s[j+1:]
 	if strings.HasPrefix(rest, "(") {
-		depth := 0
-		for k := 0; k < len(rest); k++ {
-			switch rest[k] {
-			case '\\':
-				k++
-			case '(':
-				depth++
-			case ')':
-				depth--
-				if depth == 0 {
-					return text, linkDest(rest[1:k]), j + k + 2, true
-				}
-			}
+		if k := match(s, j+1, '(', ')', false, pc.parens); k >= 0 {
+			return text, linkDest(s[j+2 : k]), k + 1, true
 		}
 	} else if strings.HasPrefix(rest, "[") {
 		if k := strings.IndexByte(rest, ']'); k > 0 {
@@ -173,17 +195,17 @@ func (r *renderer) link(s string, i int) (text, dest string, end int, ok bool) {
 			if label == "" {
 				label = text
 			}
-			dest, ok = r.refs[normLabel(label)]
+			dest, ok = r.ref(label)
 			return text, dest, j + k + 2, ok
 		}
 	}
-	dest, ok = r.refs[normLabel(text)]
+	dest, ok = r.ref(text)
 	return text, dest, j + 1, ok
 }
 
 func entity(s string) (rune, int) {
-	k := strings.IndexByte(s, ';')
-	if k < 2 || k > 9 {
+	k := strings.IndexByte(s[:min(len(s), 10)], ';')
+	if k < 2 {
 		return 0, 0
 	}
 	name := s[1:k]
@@ -276,6 +298,14 @@ func (r *renderer) inline(s string, st style, link string, out []piece) []piece 
 		*d = k < 0
 		return k
 	}
+	var pc *pairCache
+	pairs := func() *pairCache {
+		if pc == nil {
+			pc = &pairCache{map[int]int{}, map[int]int{}}
+		}
+		return pc
+	}
+	noComment := false
 	var buf []byte
 	flush := func() {
 		if len(buf) > 0 {
@@ -327,7 +357,7 @@ func (r *renderer) inline(s string, st style, link string, out []piece) []piece 
 			continue
 		case '!':
 			if i+1 < len(s) && s[i+1] == '[' {
-				if alt, src, end, ok := r.link(s, i+1); ok {
+				if alt, src, end, ok := r.link(s, i+1, pairs()); ok {
 					flush()
 					out = append(out, r.image(alt, src, st, link))
 					i = end
@@ -335,8 +365,13 @@ func (r *renderer) inline(s string, st style, link string, out []piece) []piece 
 				}
 			}
 		case '[':
-			if text, dest, end, ok := r.link(s, i); ok {
+			// Nested links would make deep nesting quadratic.
+			if r.inLink {
+				break
+			}
+			if text, dest, end, ok := r.link(s, i, pairs()); ok {
 				flush()
+				r.inLink = true
 				if !r.color {
 					out = r.inline(text, st, "", out)
 					if dest != "" && dest != text {
@@ -345,17 +380,21 @@ func (r *renderer) inline(s string, st style, link string, out []piece) []piece 
 				} else {
 					out = r.inline(text, st.with(linkStyle), dest, out)
 				}
+				r.inLink = false
 				i = end
 				continue
 			}
 		case '<':
-			if strings.HasPrefix(s[i:], "<!--") {
+			if !noComment && strings.HasPrefix(s[i:], "<!--") {
 				if j := strings.Index(s[i+4:], "-->"); j >= 0 {
 					i += j + 7
 					continue
 				}
+				noComment = true
 			}
-			if j := strings.IndexByte(s[i:], '>'); j > 0 {
+			// A tag ends before the next "<"; without that bound a run of
+			// "<" rescans the rest of the text each time.
+			if j := strings.IndexAny(s[i+1:], "<>") + 1; j > 0 && s[i+j] == '>' {
 				inner := s[i+1 : i+j]
 				if isAutolink(inner) {
 					dest := inner

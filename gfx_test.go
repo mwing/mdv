@@ -66,6 +66,15 @@ func TestImages(t *testing.T) {
 		t.Fatalf("transmitted %d images, want 2", len(g.ids))
 	}
 	sent := g.buf.Len()
+	g.limit = sent + 100
+	if over := r.document("![x](c.jpg)", 20); len(over) != 1 || g.buf.Len() != sent || len(g.ids) != 2 {
+		t.Errorf("image over the limit was sent: %q", over)
+	}
+	g.limit = maxImageTotal
+	if under := r.document("![x](c.jpg)", 25); len(under) < 2 || g.buf.Len() <= sent || len(g.ids) != 3 {
+		t.Errorf("image under the limit was not sent: %q", under)
+	}
+	sent = g.buf.Len()
 	if again := r.document("![x](a%20b.png)", 30); len(again) != 8 || g.buf.Len() != sent {
 		t.Errorf("repeated image: %d lines, %d new bytes", len(again), g.buf.Len()-sent)
 	}
@@ -93,8 +102,8 @@ func TestImages(t *testing.T) {
 			t.Errorf("command %d: continuation carries extra keys: %q", i, head)
 		}
 	}
-	if starts != 2 {
-		t.Errorf("%d transmissions, want 2", starts)
+	if starts != 3 {
+		t.Errorf("%d transmissions, want 3", starts)
 	}
 }
 

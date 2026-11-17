@@ -39,6 +39,8 @@ type renderer struct {
 
 	gfx      *gfx
 	imgWidth int
+	inLink   bool
+	level    int
 
 	// Screen rows that unwrapped code lines take beyond one each; cols is
 	// the terminal width, zero when there is none.
@@ -339,9 +341,18 @@ func (r *renderer) document(src string, width int) []string {
 	return out
 }
 
+// Deeper containers are shown as plain text: each level re-prefixes every
+// line below it, so unbounded depth is quadratic.
+const maxNesting = 32
+
 func (r *renderer) render(ls []string, width int, tight bool) []string {
 	if width < 20 {
 		width = 20
+	}
+	r.level++
+	defer func() { r.level-- }()
+	if r.level > maxNesting {
+		return r.para(strings.Join(ls, "\n"), style{}, width)
 	}
 	var out []string
 	add := func(b []string) {

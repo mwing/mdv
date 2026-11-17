@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -61,6 +62,16 @@ func clean(b []byte) string {
 	return string(out)
 }
 
+const maxInput = 64 << 20
+
+func readInput(f io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(f, maxInput+1))
+	if err == nil && len(b) > maxInput {
+		err = errors.New("input is larger than 64 MiB")
+	}
+	return b, err
+}
+
 func main() {
 	var (
 		width     int
@@ -99,7 +110,7 @@ func main() {
 			flag.Usage()
 			os.Exit(2)
 		}
-		src, err = io.ReadAll(os.Stdin)
+		src, err = readInput(os.Stdin)
 	} else {
 		if editFirst {
 			if err := edit(name); err != nil {
@@ -107,9 +118,14 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		src, err = os.ReadFile(name)
+		var f *os.File
+		f, err = os.Open(name)
 		if editFirst && os.IsNotExist(err) {
 			return
+		}
+		if err == nil {
+			src, err = readInput(f)
+			f.Close()
 		}
 	}
 	if err != nil {

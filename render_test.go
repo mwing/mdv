@@ -24,6 +24,14 @@ func TestRender(t *testing.T) {
 		{"link", "[t](http://x.y/z \"title\")", "t (http://x.y/z)", 40},
 		{"reference link", "[t][R] and [r]\n\n[r]: http://x.y", "t (http://x.y) and r (http://x.y)", 40},
 		{"autolink", "<http://x.y> http://a.b/c.", "http://x.y http://a.b/c.", 40},
+		{"long destination", "[a](http://x/" + strings.Repeat("y", 5000) + ") ![i](data:image/png;base64," + strings.Repeat("A", 5000) + ")", "a (http://x/" + strings.Repeat("y", 5000) + ") [image: i]", 6000},
+		{"backtick in destination", "[a](b`c) [d](e) `x`", "a (b`c) d (e) `x`", 40},
+		{"backtick in comment", "<!-- ` --> [a](b) and `code`", "a (b) and `code`", 40},
+		{"backtick in title", "[a](b \"t ` t\") [d](e) `x`", "a (b) d (e) `x`", 40},
+		{"backtick in strike", "~~a `b~~ [c](d) `e`", "a `b c (d) `e`", 40},
+		{"backtick in tag", "<img alt=\"`\"> [c](d) `e`", "[image: `] c (d) `e`", 40},
+		{"deep nesting is text", strings.Repeat("> ", 40) + "a", strings.Repeat("┃ ", 32) + "> > > > > > > > a", 200},
+		{"links do not nest", "[a [b](u) c](v)", "a [b](u) c (v)", 40},
 		{"image in link", "[![alt](i.png)](http://x.y)", "[image: alt] (http://x.y)", 40},
 		{"html", "a<br>b <span>c</span> Vec<T> &amp; <!-- gone -->d", "a\nb c Vec<T> & d", 40},
 		{"hard break", "a  \nb\\\nc\nd", "a\nb\nc d", 40},
@@ -80,6 +88,17 @@ func TestWidthsStayInBounds(t *testing.T) {
 				t.Errorf("width %d: line %d is %d cells: %q", width, i+1, w, l)
 			}
 		}
+	}
+}
+
+func TestBracketsStayLinear(t *testing.T) {
+	start := time.Now()
+	plain(strings.Repeat("[", 60000)+strings.Repeat("]", 60000)+"\n\n"+strings.Repeat("[a](", 60000)+")\n\n"+
+		strings.Repeat(">", 50000)+"a\n\n"+strings.Repeat("- ", 50000)+"a\n\n"+strings.Repeat("<", 100000)+">\n\n"+
+		strings.Repeat("[ <a \\> ", 40000)+"\n\n"+strings.Repeat("[ ~~a\\~~ ", 40000)+"\n\n"+
+		"a"+strings.Repeat("<!--", 100000)+"\n\n"+strings.Repeat("&", 500000)+"\n\n[r]: u", 80)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("took %v", d)
 	}
 }
 

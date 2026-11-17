@@ -22,6 +22,7 @@ import (
 const (
 	maxImageBytes  = 32 << 20
 	maxImagePixels = 64 << 20
+	maxImageTotal  = 64 << 20
 	placeholder    = "\U0010EEEE"
 )
 
@@ -46,6 +47,7 @@ type gfx struct {
 	probe        func() bool
 	off          bool
 	cache        map[imageKey]*picture
+	limit        int
 	buf          bytes.Buffer
 }
 
@@ -56,6 +58,7 @@ func newGfx(cellW, cellH float64, screenRows int, dir string) *gfx {
 		maxRows: max(1, min(screenRows-2, len(diacritics))),
 		dir:     dir,
 		cache:   map[imageKey]*picture{},
+		limit:   maxImageTotal,
 		// Random start: images from an earlier run may still be on screen.
 		next: rand.Uint32N(0xFF0000) + 1,
 	}
@@ -69,7 +72,12 @@ func (g *gfx) fit(pw, ph, maxCols int) (cols, rows int) {
 	return cols, rows
 }
 
-func (g *gfx) send(keys string, payload []byte) {
+// The limit counts bytes buffered for the terminal, not file sizes: a JPEG is
+// sent as decoded pixels, which can be many times its file size.
+func (g *gfx) send(keys string, payload []byte) bool {
+	if g.buf.Len()+base64.StdEncoding.EncodedLen(len(payload)) > g.limit {
+		return false
+	}
 	enc := base64.StdEncoding.EncodeToString(payload)
 	for first := true; first || len(enc) > 0; first = false {
 		n := min(4096, len(enc))
@@ -90,6 +98,7 @@ func (g *gfx) send(keys string, payload []byte) {
 		g.buf.WriteString("\x1b\\")
 		enc = enc[n:]
 	}
+	return true
 }
 
 func (g *gfx) load(src string, maxCols int) *picture {
@@ -131,6 +140,9 @@ func readImage(path string) []byte {
 }
 
 func (g *gfx) transmit(path string, maxCols int) *picture {
+	if g.buf.Len() >= g.limit {
+		return nil
+	}
 	data := readImage(path)
 	if data == nil {
 		return nil
@@ -150,7 +162,9 @@ func (g *gfx) transmit(path string, maxCols int) *picture {
 	p.cols, p.rows = g.fit(cfg.Width, cfg.Height, maxCols)
 	keys := fmt.Sprintf("a=T,U=1,q=2,i=%d,c=%d,r=%d", p.id, p.cols, p.rows)
 	if format == "png" {
-		g.send(keys+",f=100", data)
+		if !g.send(keys+",f=100", data) {
+			return nil
+		}
 	} else {
 		img, _, err := image.Decode(bytes.NewReader(data))
 		if err != nil {
@@ -161,7 +175,9 @@ func (g *gfx) transmit(path string, maxCols int) *picture {
 		zw, _ := zlib.NewWriterLevel(&z, zlib.BestSpeed)
 		zw.Write(rgba.Pix)
 		zw.Close()
-		g.send(fmt.Sprintf("%s,f=32,o=z,s=%d,v=%d", keys, rgba.Rect.Dx(), rgba.Rect.Dy()), z.Bytes())
+		if !g.send(fmt.Sprintf("%s,f=32,o=z,s=%d,v=%d", keys, rgba.Rect.Dx(), rgba.Rect.Dy()), z.Bytes()) {
+			return nil
+		}
 	}
 	g.next++
 	g.ids = append(g.ids, p.id)
