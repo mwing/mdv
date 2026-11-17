@@ -39,6 +39,10 @@ type renderer struct {
 
 	gfx      *gfx
 	imgWidth int
+
+	// Screen rows that unwrapped code lines take beyond one each; cols is
+	// the terminal width, zero when there is none.
+	cols, overflow int
 }
 
 func (r *renderer) paint(st style, text string) string {
@@ -296,6 +300,7 @@ func gutter(bar string, ls []string) []string {
 func (r *renderer) document(src string, width int) []string {
 	ls := strings.Split(src, "\n")
 	r.refs = map[string]string{}
+	r.overflow = 0
 	var open byte
 	for i, l := range ls {
 		l = expandTabs(l)
@@ -513,6 +518,11 @@ func (r *renderer) heading(level int, text string, width int) []string {
 
 // Code lines are never hard-wrapped, so a copied line stays one line.
 func (r *renderer) code(ls []string) []string {
+	if r.cols > 0 {
+		for _, l := range ls {
+			r.overflow += (strWidth(l) + 1) / r.cols
+		}
+	}
 	return gutter(r.paint(style{attr: dim}, r.g.code), ls)
 }
 

@@ -185,10 +185,12 @@ func wrap(ps []piece, width int) []line {
 				break
 			}
 			lines = append(lines, head)
+			wordW -= head.w
+		}
+		// A forced cut can separate a rune from its VS16 and leave a
+		// phantom cell behind.
+		if len(word) == 0 {
 			wordW = 0
-			for _, p := range word {
-				wordW += strWidth(p.text)
-			}
 		}
 		cur.ps = append(cur.ps, word...)
 		cur.w += wordW

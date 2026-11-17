@@ -11,11 +11,26 @@ mdv -e notes.md
 
 ## Install
 
-Needs Go 1.24 or newer. macOS and Linux only.
+macOS and Linux, arm64 and amd64.
+
+Download a prebuilt binary from the [latest release](https://github.com/mwing/mdv/releases/latest).
+This puts it in `~/.local/bin`, which must be on your `PATH`:
 
 ```sh
-go build -ldflags='-s -w' -o ~/.local/bin/mdv .
+os=$(uname -s | tr A-Z a-z)
+arch=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+mkdir -p ~/.local/bin
+curl -fsSL "https://github.com/mwing/mdv/releases/latest/download/mdv_${os}_${arch}.tar.gz" |
+  tar -xz -C ~/.local/bin mdv
 ```
+
+Or, with Go 1.24 or newer:
+
+```sh
+go install github.com/mwing/mdv@latest
+```
+
+Each release lists SHA-256 sums in `checksums.txt`.
 
 ## Options
 
@@ -27,6 +42,7 @@ go build -ldflags='-s -w' -o ~/.local/bin/mdv .
 | `-images WHEN` | `auto`, `always` or `never`. `auto` shows images in kitty and Ghostty. |
 | `-P` | Do not page. |
 | `-e` | Open the file in `$VISUAL` or `$EDITOR` (default `vi`) first, then render the result. |
+| `-version` | Print the version. |
 
 With no file, or `-`, `mdv` reads stdin.
 
@@ -94,6 +110,9 @@ go run . testdata/sample.md
 ```
 
 `testdata/sample.md` exercises every supported construct.
+
+Pushing a version tag such as `v0.1.0` runs `.github/workflows/release.yml`, which tests, builds the four
+binaries and publishes them as a GitHub release.
 
 ## License
 

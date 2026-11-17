@@ -15,8 +15,8 @@ func termSize(fd int) (ws winsize, ok bool) {
 	return ws, e == 0 && ws.Col > 0
 }
 
-// A cheap first filter; the terminal itself is asked before any image is
-// sent. Multiplexers need a passthrough wrapping that is not implemented.
+// Not authoritative: the terminal itself is asked before any image is sent.
+// Multiplexers need a passthrough wrapping that is not implemented.
 func imageTerminal() bool {
 	if os.Getenv("TMUX") != "" || os.Getenv("ZELLIJ") != "" {
 		return false
@@ -62,8 +62,8 @@ func terminalName() string {
 	}
 	defer ioctl(ioctlSetTermios, &saved)
 
-	// Every terminal answers the trailing device-attributes request, so a
-	// terminal without XTVERSION costs one round trip, not a timeout.
+	// A terminal without XTVERSION still answers the trailing
+	// device-attributes request, which ends the wait before the timeout.
 	if _, err := tty.WriteString("\x1b[>q\x1b[c"); err != nil {
 		return ""
 	}

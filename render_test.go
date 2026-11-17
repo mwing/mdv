@@ -64,7 +64,7 @@ func TestColor(t *testing.T) {
 }
 
 func TestClean(t *testing.T) {
-	if got := clean([]byte("\xef\xbb\xbfa\x1b[31mb\r\n\tc\u009b1md\u00a0é")); got != "a[31mb\n\tc1md\u00a0é" {
+	if got := clean([]byte("\xef\xbb\xbfa\x1b[31mb\r\n\tc\u009b1md\u00a0é\x9b2J\xc2\x01\x9bx")); got != "a[31mb\n\tc1md\u00a0é\ufffd2J\ufffd\ufffdx" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -80,6 +80,24 @@ func TestWidthsStayInBounds(t *testing.T) {
 				t.Errorf("width %d: line %d is %d cells: %q", width, i+1, w, l)
 			}
 		}
+	}
+}
+
+func TestLongWordStaysLinear(t *testing.T) {
+	start := time.Now()
+	if got := plain(strings.Repeat("a", 600000), 80); len(got) != 600000+7499 {
+		t.Errorf("got %d bytes", len(got))
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("took %v", d)
+	}
+}
+
+func TestCodeOverflowCountsScreenRows(t *testing.T) {
+	r := &renderer{g: &unicodeGlyphs, cols: 10}
+	r.document("```\n"+strings.Repeat("x", 25)+"\nshort\n```", 10)
+	if r.overflow != 2 {
+		t.Errorf("overflow = %d, want 2", r.overflow)
 	}
 }
 

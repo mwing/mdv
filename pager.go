@@ -76,6 +76,10 @@ func edit(name string) error {
 	if len(args) == 0 {
 		args = []string{"vi"}
 	}
+	// A file named like an option must not be read as one by the editor.
+	if strings.HasPrefix(name, "-") {
+		name = "./" + name
+	}
 	cmd := exec.Command(args[0], append(args[1:], name)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()

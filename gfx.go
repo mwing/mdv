@@ -176,8 +176,8 @@ func (g *gfx) deleteAll() []byte {
 	return b.Bytes()
 }
 
-// Reduces by a whole factor only, so the result is at least w by h, not
-// exactly that.
+// Reduces by a whole factor only, so the result can be up to twice w by h.
+// Never enlarges.
 func shrink(img image.Image, w, h int) *image.RGBA {
 	b := img.Bounds()
 	src := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
