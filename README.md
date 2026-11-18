@@ -9,6 +9,14 @@ git show HEAD:README.md | mdv
 mdv -e notes.md
 ```
 
+<p>
+  <img src="demo/mdv-image.png" alt="mdv showing a document with an inline image, lists, a callout and a code block" width="49%" align="top">
+  <img src="demo/mdv.png" alt="mdv showing headings, inline styles, nested lists, task lists and a block quote" width="49%" align="top">
+</p>
+
+The screenshots show [`demo/demo.md`](demo/demo.md) and
+[`testdata/sample.md`](testdata/sample.md) in Ghostty.
+
 ## Install
 
 macOS and Linux, arm64 and amd64.
@@ -128,7 +136,8 @@ go test -bench . -run '^$'
 go run . testdata/sample.md
 ```
 
-`testdata/sample.md` exercises every supported construct.
+`testdata/sample.md` exercises every supported construct; `demo/demo.md` is a short
+document with an image, used for the screenshots above.
 
 Pushing a version tag such as `v0.1.0` runs `.github/workflows/release.yml`, which tests, builds the four
 binaries and publishes them as a GitHub release.
