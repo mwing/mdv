@@ -134,6 +134,31 @@ func TestProbe(t *testing.T) {
 	}
 }
 
+func TestDirectPlacement(t *testing.T) {
+	g := newGfx(10, 20, 40, writeImages(t))
+	g.direct = true
+	r := &renderer{g: &unicodeGlyphs, color: true, gfx: g}
+	got := r.document("> ![x](a%20b.png)", 32)
+	if len(got) != 8 || g.buf.Len() != 0 || g.total == 0 {
+		t.Fatalf("%d lines, %d bytes sent ahead, %d counted", len(got), g.buf.Len(), g.total)
+	}
+	bar := "\x1b[2m┃\x1b[0m"
+	for y, l := range got[:7] {
+		if l != bar {
+			t.Errorf("row %d = %q, want a bare gutter", y, l)
+		}
+	}
+	counted := g.total
+	g.limit = counted*2 + 10
+	if again := r.document("> ![x](a%20b.png)\n\n> ![x](a%20b.png)", 32); len(again) != 10 || g.total <= counted {
+		t.Errorf("second use: %d lines, %d counted; third use should be over the limit", len(again), g.total)
+	}
+	last := got[7]
+	if !strings.HasPrefix(last, bar+" \x1b[7A\x1b_Ga=T,C=1,q=2,c=30,r=8,f=100,m=") || !strings.HasSuffix(last, "\x1b\\\x1b[7B") || strings.Contains(last, "U=1") {
+		t.Errorf("last row = %.80q … %.20q", last, last[len(last)-20:])
+	}
+}
+
 func TestPlaceholderRow(t *testing.T) {
 	got := (&picture{id: 0x010203, cols: 3, rows: 2}).lines()
 	want := "\x1b[38;2;1;2;3m\U0010EEEE̍̅\U0010EEEE\U0010EEEE\x1b[0m"

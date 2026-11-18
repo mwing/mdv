@@ -16,7 +16,8 @@ func termSize(fd int) (ws winsize, ok bool) {
 }
 
 // Not authoritative: the terminal itself is asked before any image is sent.
-// Multiplexers need a passthrough wrapping that is not implemented.
+// tmux needs a passthrough wrapping that is not implemented; zellij is the
+// caller's business.
 func imageTerminal() bool {
 	if os.Getenv("TMUX") != "" || os.Getenv("ZELLIJ") != "" {
 		return false
@@ -35,9 +36,7 @@ func utf8Locale() bool {
 	return true
 }
 
-// XTVERSION rather than the environment: TERM and TERM_PROGRAM are inherited
-// by terminals embedded in editors and by multiplexers.
-func terminalName() string {
+func ttyQuery(request string) string {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
 		return ""
@@ -62,9 +61,9 @@ func terminalName() string {
 	}
 	defer ioctl(ioctlSetTermios, &saved)
 
-	// A terminal without XTVERSION still answers the trailing
-	// device-attributes request, which ends the wait before the timeout.
-	if _, err := tty.WriteString("\x1b[>q\x1b[c"); err != nil {
+	// A terminal that ignores the request still answers the trailing
+	// device-attributes one, which ends the wait before the timeout.
+	if _, err := tty.WriteString(request + "\x1b[c"); err != nil {
 		return ""
 	}
 	var reply []byte
@@ -79,7 +78,18 @@ func terminalName() string {
 			break
 		}
 	}
-	return parseXTVersion(string(reply))
+	return string(reply)
+}
+
+// XTVERSION rather than the environment: TERM and TERM_PROGRAM are inherited
+// by terminals embedded in editors and by multiplexers.
+func terminalName() string {
+	return parseXTVersion(ttyQuery("\x1b[>q"))
+}
+
+// a=q: the one-pixel image is checked but not stored.
+func graphicsSupported() bool {
+	return strings.Contains(ttyQuery("\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\"), "\x1b_Gi=31;OK")
 }
 
 func parseXTVersion(reply string) string {

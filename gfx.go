@@ -34,10 +34,11 @@ type imageKey struct {
 type picture struct {
 	id         uint32
 	cols, rows int
+	inline     string
 }
 
-// Images are placed with Unicode placeholders because those are ordinary
-// coloured text and so survive a pager.
+// By default images are placed with Unicode placeholders, because those are
+// ordinary coloured text and so survive a pager.
 type gfx struct {
 	cellW, cellH float64
 	maxRows      int
@@ -47,8 +48,12 @@ type gfx struct {
 	probe        func() bool
 	off          bool
 	cache        map[imageKey]*picture
-	limit        int
-	buf          bytes.Buffer
+	limit, total int
+
+	// For terminals with kitty graphics but no Unicode placeholders; a pager
+	// cannot carry cursor-placed images.
+	direct bool
+	buf    bytes.Buffer
 }
 
 func newGfx(cellW, cellH float64, screenRows int, dir string) *gfx {
@@ -74,28 +79,30 @@ func (g *gfx) fit(pw, ph, maxCols int) (cols, rows int) {
 
 // The limit counts bytes buffered for the terminal, not file sizes: a JPEG is
 // sent as decoded pixels, which can be many times its file size.
-func (g *gfx) send(keys string, payload []byte) bool {
-	if g.buf.Len()+base64.StdEncoding.EncodedLen(len(payload)) > g.limit {
+func (g *gfx) send(dst *bytes.Buffer, keys string, payload []byte) bool {
+	if g.total+base64.StdEncoding.EncodedLen(len(payload)) > g.limit {
 		return false
 	}
+	start := dst.Len()
+	defer func() { g.total += dst.Len() - start }()
 	enc := base64.StdEncoding.EncodeToString(payload)
 	for first := true; first || len(enc) > 0; first = false {
 		n := min(4096, len(enc))
-		g.buf.WriteString("\x1b_G")
+		dst.WriteString("\x1b_G")
 		if first {
-			g.buf.WriteString(keys)
-			g.buf.WriteByte(',')
+			dst.WriteString(keys)
+			dst.WriteByte(',')
 		} else {
 			// Repeated so a terminal that loses track of the transfer stays silent.
-			g.buf.WriteString("q=2,")
+			dst.WriteString("q=2,")
 		}
 		if n < len(enc) {
-			g.buf.WriteString("m=1;")
+			dst.WriteString("m=1;")
 		} else {
-			g.buf.WriteString("m=0;")
+			dst.WriteString("m=0;")
 		}
-		g.buf.WriteString(enc[:n])
-		g.buf.WriteString("\x1b\\")
+		dst.WriteString(enc[:n])
+		dst.WriteString("\x1b\\")
 		enc = enc[n:]
 	}
 	return true
@@ -116,6 +123,14 @@ func (g *gfx) load(src string, maxCols int) *picture {
 	if !seen {
 		p = g.transmit(src, maxCols)
 		g.cache[key] = p
+		return p
+	}
+	// A cursor-placed image is transmitted again at every use.
+	if p != nil && p.inline != "" {
+		if g.total+len(p.inline) > g.limit {
+			return nil
+		}
+		g.total += len(p.inline)
 	}
 	return p
 }
@@ -140,7 +155,7 @@ func readImage(path string) []byte {
 }
 
 func (g *gfx) transmit(path string, maxCols int) *picture {
-	if g.buf.Len() >= g.limit {
+	if g.total >= g.limit {
 		return nil
 	}
 	data := readImage(path)
@@ -161,8 +176,14 @@ func (g *gfx) transmit(path string, maxCols int) *picture {
 	p := &picture{id: g.next}
 	p.cols, p.rows = g.fit(cfg.Width, cfg.Height, maxCols)
 	keys := fmt.Sprintf("a=T,U=1,q=2,i=%d,c=%d,r=%d", p.id, p.cols, p.rows)
+	dst := &g.buf
+	if g.direct {
+		// C=1 leaves the cursor alone; lines() does the positioning.
+		keys = fmt.Sprintf("a=T,C=1,q=2,c=%d,r=%d", p.cols, p.rows)
+		dst = new(bytes.Buffer)
+	}
 	if format == "png" {
-		if !g.send(keys+",f=100", data) {
+		if !g.send(dst, keys+",f=100", data) {
 			return nil
 		}
 	} else {
@@ -175,8 +196,16 @@ func (g *gfx) transmit(path string, maxCols int) *picture {
 		zw, _ := zlib.NewWriterLevel(&z, zlib.BestSpeed)
 		zw.Write(rgba.Pix)
 		zw.Close()
-		if !g.send(fmt.Sprintf("%s,f=32,o=z,s=%d,v=%d", keys, rgba.Rect.Dx(), rgba.Rect.Dy()), z.Bytes()) {
+		if !g.send(dst, fmt.Sprintf("%s,f=32,o=z,s=%d,v=%d", keys, rgba.Rect.Dx(), rgba.Rect.Dy()), z.Bytes()) {
 			return nil
+		}
+	}
+	if g.direct {
+		// The rows are printed first and the image is placed from the last
+		// one, so it never lands on a row the screen has yet to scroll in.
+		p.inline = dst.String()
+		if p.rows > 1 {
+			p.inline = fmt.Sprintf("\x1b[%dA%s\x1b[%dB", p.rows-1, p.inline, p.rows-1)
 		}
 	}
 	g.next++
@@ -223,6 +252,11 @@ func shrink(img image.Image, w, h int) *image.RGBA {
 }
 
 func (p *picture) lines() []string {
+	if p.inline != "" {
+		out := make([]string, p.rows)
+		out[p.rows-1] = p.inline
+		return out
+	}
 	head := fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s", p.id>>16&255, p.id>>8&255, p.id&255, placeholder)
 	// Cells without diacritics continue the row from the cell to their left.
 	tail := string(diacritics[0]) + strings.Repeat(placeholder, p.cols-1) + "\x1b[0m"

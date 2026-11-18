@@ -59,7 +59,7 @@ from above (on Linux without `shasum`, use `sha256sum -c -`):
 | `-w N` | Wrap at N columns. Default is the terminal width, at most 100. |
 | `-color WHEN` | `auto`, `always` or `never`. `NO_COLOR` and `TERM=dumb` turn colour off. |
 | `-ascii` | ASCII glyphs only. Automatic when the locale is not UTF-8. |
-| `-images WHEN` | `auto`, `always` or `never`. `auto` shows images in kitty and Ghostty. |
+| `-images WHEN` | `auto`, `always` or `never`. `auto` shows images in kitty, Ghostty and zellij. |
 | `-P` | Do not page. |
 | `-e` | Open the file in `$VISUAL` or `$EDITOR` (default `vi`) first, then render the result. |
 | `-version` | Print the version. |
@@ -94,12 +94,17 @@ placed with Unicode placeholders, so they scroll with the text inside `less`.
 - One document can send at most 64 MiB of image data; an image that would exceed that
   falls back to alt text.
 - Anything that cannot be shown falls back to `[image: alt]`: remote and missing files,
-  SVG and WebP, images in headings and table cells, tmux, zellij, and piped output.
+  SVG and WebP, images in headings and table cells, tmux, and piped output.
 - Before sending the first image, `mdv` asks the terminal for its name, because `TERM`
   is inherited by multiplexers and embedded terminals that cannot draw images.
 - Paging images needs `less` 632 or newer. With an older `less` or another pager, long
   documents fall back to alt text; `-images always` overrides both checks.
 - GIFs show their first frame.
+
+zellij (0.45 or newer, in a terminal with kitty graphics) draws images itself but has no
+placeholders, so there `mdv` places each image at the cursor instead. `less` cannot carry
+that, so a document with images is printed without the pager and you scroll with zellij.
+The check there is a graphics query to zellij rather than the terminal's name.
 
 ## Supported markdown
 

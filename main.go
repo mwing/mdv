@@ -21,7 +21,7 @@ Renders markdown in the terminal. Reads stdin when no file is given.
   -w N           wrap at N columns (default: terminal width, at most 100)
   -color WHEN    auto, always or never (default auto; NO_COLOR is honoured)
   -ascii         use ASCII glyphs only
-  -images WHEN   auto, always or never (default auto: kitty and Ghostty)
+  -images WHEN   auto, always or never (default auto: kitty, Ghostty, zellij)
   -P             do not page
   -e             open the file in $VISUAL or $EDITOR first, then render it
   -version       print the version
@@ -152,7 +152,9 @@ func main() {
 		r.g = &asciiGlyphs
 	}
 
-	if tty && r.color && images != "never" && (images == "always" || imageTerminal() && ws.X > 0 && ws.Y > 0) {
+	// zellij draws kitty graphics itself but has no Unicode placeholders.
+	zellij := os.Getenv("ZELLIJ") != "" && os.Getenv("TMUX") == ""
+	if tty && r.color && images != "never" && (images == "always" || (zellij || imageTerminal()) && ws.X > 0 && ws.Y > 0) {
 		cellW, cellH := 8.0, 16.0
 		if ws.X > 0 && ws.Y > 0 {
 			cellW, cellH = float64(ws.X)/float64(cols), float64(ws.Y)/float64(rows)
@@ -162,7 +164,12 @@ func main() {
 			dir = filepath.Dir(name)
 		}
 		r.gfx = newGfx(cellW, cellH, rows, dir)
-		if images == "auto" {
+		r.gfx.direct = zellij
+		switch {
+		case images != "auto":
+		case zellij:
+			r.gfx.probe = graphicsSupported
+		default:
 			r.gfx.probe = func() bool { return hasPlaceholders(terminalName()) }
 		}
 	}
@@ -170,6 +177,9 @@ func main() {
 	text := clean(src)
 	lines := r.document(text, width)
 	paged := tty && !noPager && len(lines)+r.overflow >= rows
+	if r.gfx != nil && r.gfx.direct && len(r.gfx.ids) > 0 {
+		paged = false
+	}
 	var args []string
 	if paged {
 		args = pagerArgs()
