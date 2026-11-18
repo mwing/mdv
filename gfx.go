@@ -125,7 +125,8 @@ func (g *gfx) load(src string, maxCols int) *picture {
 		g.cache[key] = p
 		return p
 	}
-	// A cursor-placed image is transmitted again at every use.
+	// A cursor-placed image has no id to place again, so every use carries
+	// its own transmission.
 	if p != nil && p.inline != "" {
 		if g.total+len(p.inline) > g.limit {
 			return nil
@@ -203,6 +204,7 @@ func (g *gfx) transmit(path string, maxCols int) *picture {
 	if g.direct {
 		// The rows are printed first and the image is placed from the last
 		// one, so it never lands on a row the screen has yet to scroll in.
+		// The cursor-up count assumes no reserved row wraps.
 		p.inline = dst.String()
 		if p.rows > 1 {
 			p.inline = fmt.Sprintf("\x1b[%dA%s\x1b[%dB", p.rows-1, p.inline, p.rows-1)

@@ -3,6 +3,8 @@
 A small, fast markdown viewer for the terminal. One static binary, no dependencies
 beyond the Go standard library.
 
+It shows images inline in kitty, Ghostty and zellij.
+
 ```sh
 mdv README.md
 git show HEAD:README.md | mdv
@@ -83,9 +85,15 @@ With no file, or `-`, `mdv` reads stdin.
 
 ## Images
 
-In kitty and Ghostty, local PNG, JPEG and GIF files are drawn inline with the kitty
-graphics protocol, scaled down to fit the text width and one screen of height. They are
-placed with Unicode placeholders, so they scroll with the text inside `less`.
+Local PNG, JPEG and GIF files are drawn inline with the kitty graphics protocol, scaled
+down to fit the text width and one screen of height. This works in:
+
+| Where | How images are placed | Paging |
+|-------|-----------------------|--------|
+| kitty, Ghostty | Unicode placeholders, which are ordinary text | Through `less`, images scroll with the text |
+| zellij 0.45 or newer, inside a terminal with kitty graphics | At the cursor, because zellij has no placeholders | None: the document is printed and you scroll with zellij |
+
+Everywhere else images fall back to `[image: alt]`.
 
 - Paths resolve relative to the markdown file. Remote URLs are never fetched.
 - Image paths are not confined to the document's directory, so `../assets/logo.png`
@@ -93,18 +101,18 @@ placed with Unicode placeholders, so they scroll with the text inside `less`.
   image file you can read on your screen; use `-images never` for those.
 - One document can send at most 64 MiB of image data; an image that would exceed that
   falls back to alt text.
-- Anything that cannot be shown falls back to `[image: alt]`: remote and missing files,
-  SVG and WebP, images in headings and table cells, tmux, and piped output.
-- Before sending the first image, `mdv` asks the terminal for its name, because `TERM`
-  is inherited by multiplexers and embedded terminals that cannot draw images.
+- These also fall back to alt text: remote and missing files, SVG and WebP, images in
+  headings and table cells, tmux, and any output without colour (piped, `NO_COLOR`,
+  `-color never`).
+- Before sending the first image, `mdv` checks the terminal, because `TERM` is inherited
+  by multiplexers and embedded terminals that cannot draw images. It asks kitty and
+  Ghostty for their name and asks zellij whether graphics work.
 - Paging images needs `less` 632 or newer. With an older `less` or another pager, long
-  documents fall back to alt text; `-images always` overrides both checks.
+  documents fall back to alt text.
+- `-images always` skips the terminal and pager checks. In a terminal without support
+  that prints unreadable placeholder characters.
+- In zellij the pager is skipped only when an image is actually drawn.
 - GIFs show their first frame.
-
-zellij (0.45 or newer, in a terminal with kitty graphics) draws images itself but has no
-placeholders, so there `mdv` places each image at the cursor instead. `less` cannot carry
-that, so a document with images is printed without the pager and you scroll with zellij.
-The check there is a graphics query to zellij rather than the terminal's name.
 
 ## Supported markdown
 

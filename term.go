@@ -16,8 +16,8 @@ func termSize(fd int) (ws winsize, ok bool) {
 }
 
 // Not authoritative: the terminal itself is asked before any image is sent.
-// tmux needs a passthrough wrapping that is not implemented; zellij is the
-// caller's business.
+// tmux needs a passthrough wrapping that is not implemented; zellij takes
+// cursor-placed images instead of this path.
 func imageTerminal() bool {
 	if os.Getenv("TMUX") != "" || os.Getenv("ZELLIJ") != "" {
 		return false
